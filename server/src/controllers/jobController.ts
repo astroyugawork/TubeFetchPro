@@ -8,9 +8,7 @@ import mongoose from 'mongoose';
 export const createJob = async (req: Request, res: Response) => {
   try {
     const { sourceUrl, outputType, quality, consentAccepted, customFilename } = req.body;
-    
-    // Auth mocked for now
-    const userId = new mongoose.Types.ObjectId(); 
+    const userId = (req as any).user.id;
 
     if (!consentAccepted) {
       return res.status(403).json({ error: 'You must provide consent representing legal authority to process this content.' });
@@ -34,17 +32,63 @@ export const createJob = async (req: Request, res: Response) => {
       title: metadata.title,
       thumbnail: metadata.thumbnail,
       duration: metadata.duration,
-      outputType,
-      quality,
+      outputType: outputType || 'mp4',
+      quality: quality || 'high',
       customFilename,
       status: 'pending',
       consentAccepted
     });
 
-    // Handle background processing
     addJobToQueue(job._id.toString());
-
     res.status(201).json(job);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+export const createBatchJobs = async (req: Request, res: Response) => {
+  try {
+    const { items, outputType, quality, consentAccepted } = req.body;
+    const userId = (req as any).user.id;
+
+    if (!consentAccepted) {
+      return res.status(403).json({ error: 'Consent is required for batch processing.' });
+    }
+
+    if (!items || !Array.isArray(items)) {
+      return res.status(400).json({ error: 'Items array is required' });
+    }
+
+    const jobIds: string[] = [];
+
+    for (const item of items) {
+      // Record consent for each
+      await UsageConsent.create({
+        userId,
+        sourceUrl: item.sourceUrl,
+        accepted: true,
+        ipAddress: req.ip
+      });
+
+      const job = await VideoJob.create({
+        userId,
+        inputType: 'channel_video',
+        sourceUrl: item.sourceUrl,
+        videoId: item.videoId,
+        title: item.title,
+        thumbnail: item.thumbnail,
+        duration: item.duration,
+        outputType: outputType || 'mp4',
+        quality: quality || 'high',
+        status: 'pending',
+        consentAccepted
+      });
+
+      addJobToQueue(job._id.toString());
+      jobIds.push(job._id.toString());
+    }
+
+    res.status(201).json({ message: `${jobIds.length} jobs created successfully`, jobIds });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
@@ -52,7 +96,7 @@ export const createJob = async (req: Request, res: Response) => {
 
 export const getHistory = async (req: Request, res: Response) => {
   try {
-    const userId = new mongoose.Types.ObjectId(); // mocked
+    const userId = (req as any).user.id;
     const jobs = await VideoJob.find({ userId }).sort({ createdAt: -1 });
     res.json(jobs);
   } catch (error: any) {

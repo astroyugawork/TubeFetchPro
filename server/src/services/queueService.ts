@@ -76,6 +76,19 @@ export const addJobToQueue = (jobId: string) => {
       job.status = 'failed';
       job.errorMessage = error.message;
       await job.save();
+    } finally {
+      // Cleanup temp files
+      try {
+        const tempDir = path.join(__dirname, '../../temp');
+        const rawFilePath = path.join(tempDir, `${job.videoId}_raw.mp4`);
+        const mp3Path = path.join(tempDir, `${job.videoId}.mp3`);
+        
+        if (fs.existsSync(rawFilePath)) fs.unlinkSync(rawFilePath);
+        if (fs.existsSync(mp3Path)) fs.unlinkSync(mp3Path);
+        console.log(`[CLEANUP] Deleted temp files for job ${job.videoId}`);
+      } catch (cleanupErr: any) {
+        console.error(`[CLEANUP ERROR] ${cleanupErr.message}`);
+      }
     }
   });
 };

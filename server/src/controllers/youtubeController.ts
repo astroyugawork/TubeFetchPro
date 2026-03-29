@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import { resolveInputType, fetchVideoMetadata } from '../services/youtubeService';
+import * as youtubeService from '../services/youtubeService';
 import ChannelCache from '../models/ChannelCache';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -32,36 +33,31 @@ export const fetchChannelVideos = async (req: Request, res: Response) => {
     const { channelUrl } = req.body;
     if (!channelUrl) return res.status(400).json({ error: 'channelUrl is required' });
 
-    // In a real implementation:
     // 1. Check ChannelCache first
-    // 2. If stale or missing, use yt-dlp to list channel videos
-    // 3. Save to ChannelCache and return
-
     const cache = await ChannelCache.findOne({ channelUrl });
     if (cache) {
-      return res.json(cache);
+      // Return cached results if less than 24 hours old
+      const isFresh = (new Date().getTime() - new Date(cache.lastFetchedAt).getTime()) < 24 * 60 * 60 * 1000;
+      if (isFresh) {
+        return res.json(cache);
+      }
     }
 
-    if (channelUrl.includes('supercdrama') || channelUrl.includes('@supercdrama')) {
-      return res.json({
-        channelName: 'Super C-Drama',
-        avatar: 'https://yt3.googleusercontent.com/ytc/AIdro_k...',
-        fetchedVideos: [
-          { title: 'The Double EP 1 | Wu Jinyan, Wang Xingyue', videoId: 'V1-2024-001', duration: 2400, thumbnail: 'https://i.ytimg.com/vi/V1/maxres.jpg' },
-          { title: 'The Double EP 2 | Wu Jinyan, Wang Xingyue', videoId: 'V1-2024-002', duration: 2400, thumbnail: 'https://i.ytimg.com/vi/V2/maxres.jpg' },
-          { title: 'Blossoms in Adversity EP 1 | Hu Yitian, Zhang Jingyi', videoId: 'V1-2024-003', duration: 2500, thumbnail: 'https://i.ytimg.com/vi/V3/maxres.jpg' },
-        ]
-      });
-    }
+    // 2. Fetch from YouTube with real service
+    const rawData = await youtubeService.fetchChannelVideos(channelUrl);
+    
+    // 3. Update/Save to Cache
+    const updatedCache = await ChannelCache.findOneAndUpdate(
+      { channelUrl },
+      { 
+        channelName: channelUrl.split('/').pop() || 'YouTube Channel',
+        fetchedVideos: rawData.fetchedVideos,
+        lastFetchedAt: new Date(),
+      },
+      { upsert: true, new: true }
+    );
 
-    // Default dummy response
-    res.json({
-      channelName: 'Example Channel',
-      avatar: '',
-      fetchedVideos: [
-         { title: 'Video 1', videoId: uuidv4(), duration: 120, thumbnail: '' }
-      ]
-    });
+    res.json(updatedCache);
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }

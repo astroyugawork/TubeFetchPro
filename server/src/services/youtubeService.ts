@@ -31,3 +31,34 @@ export const fetchVideoMetadata = async (videoUrl: string) => {
     throw new Error('Failed to fetch video metadata. Ensure yt-dlp is installed and the URL is valid.');
   }
 };
+
+export const fetchChannelVideos = async (channelUrl: string, limit: number = 30) => {
+  try {
+    // Using --flat-playlist to get metadata without downloading
+    // --playlist-end limits the number of videos to fetch for performance
+    const { stdout } = await execPromise(
+      `yt-dlp --flat-playlist --playlist-end ${limit} --print "%(id)s||%(title)s||%(duration)s||%(thumbnail)s" --no-warnings "${channelUrl}"`
+    );
+
+    const lines = stdout.trim().split('\n');
+    const videos = lines
+      .filter(line => line.includes('||'))
+      .map(line => {
+        const [videoId, title, duration, thumbnail] = line.split('||');
+        return {
+          videoId,
+          title,
+          duration: parseInt(duration) || 0,
+          thumbnail,
+        };
+      });
+
+    return {
+      channelUrl,
+      fetchedVideos: videos,
+    };
+  } catch (error: any) {
+    console.error(`[ERROR] yt-dlp channel fetch failed: ${error.message}`);
+    throw new Error('Failed to scan channel videos. Ensure the URL/Handle is valid.');
+  }
+};
