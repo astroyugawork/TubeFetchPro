@@ -26,9 +26,13 @@ const COOKIES_PATH = process.env.COOKIES_PATH || '/app/cookies.txt';
 // Shared yt-dlp flags to improve reliability on cloud IPs:
 // - multiple YouTube player clients to bypass some bot checks
 // - cookies file (if present) to bypass "Sign in to confirm you're not a bot"
+// - format sort by language preference — picks the ORIGINAL audio track over dubs
+//   (videos on YouTube can have multiple audio tracks; without this, yt-dlp may
+//    pick the English dub when the user wants the original language)
 export const getYtDlpCommonArgs = (): string => {
   const parts: string[] = [
     '--extractor-args "youtube:player_client=default,mweb,web_embedded,android_vr"',
+    '-S "lang,quality,res,fps"',
   ];
   if (fs.existsSync(COOKIES_PATH)) {
     parts.push(`--cookies "${COOKIES_PATH}"`);
