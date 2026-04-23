@@ -11,13 +11,17 @@ COPY src ./src
 RUN npx tsc
 
 
-# --- Runtime stage: only prod deps + ffmpeg + yt-dlp ---
+# --- Runtime stage: only prod deps + ffmpeg + yt-dlp + deno ---
 FROM node:20-slim
 
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends ffmpeg python3 curl ca-certificates && \
-    curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp && \
+    apt-get install -y --no-install-recommends ffmpeg python3 curl ca-certificates unzip && \
+    curl -fsSL https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp && \
     chmod a+rx /usr/local/bin/yt-dlp && \
+    curl -fsSL https://github.com/denoland/deno/releases/latest/download/deno-x86_64-unknown-linux-gnu.zip -o /tmp/deno.zip && \
+    unzip -q /tmp/deno.zip -d /usr/local/bin && \
+    chmod +x /usr/local/bin/deno && \
+    rm /tmp/deno.zip && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

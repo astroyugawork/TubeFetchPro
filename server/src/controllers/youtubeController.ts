@@ -3,7 +3,7 @@ import { exec } from 'child_process';
 import util from 'util';
 import path from 'path';
 import fs from 'fs';
-import { resolveInputType, fetchVideoMetadata } from '../services/youtubeService';
+import { resolveInputType, fetchVideoMetadata, getYtDlpCommonArgs } from '../services/youtubeService';
 import * as youtubeService from '../services/youtubeService';
 import { convertToMp3 } from '../services/ffmpegService';
 import ChannelCache from '../models/ChannelCache';
@@ -75,7 +75,7 @@ export const directDownload = async (req: Request, res: Response) => {
   try {
     const height = MP4_HEIGHT[quality] || MP4_HEIGHT.high;
     const formatSelector = `bestvideo[height<=${height}][ext=mp4]+bestaudio[ext=m4a]/best[height<=${height}][ext=mp4]/best[height<=${height}]`;
-    const cmd = `${YT_DLP} -o "${rawPath}" -f "${formatSelector}" --no-playlist "${url}"`;
+    const cmd = `${YT_DLP} ${getYtDlpCommonArgs()} -o "${rawPath}" -f "${formatSelector}" --no-playlist "${url}"`;
     console.log(`[DIRECT] ${cmd}`);
     await execPromise(cmd, { timeout: 600000, maxBuffer: 1024 * 1024 * 10 });
 

@@ -2,6 +2,7 @@ import PQueue from 'p-queue';
 import VideoJob from '../models/VideoJob';
 import { convertToMp3 } from './ffmpegService';
 import { uploadToCloudinary } from './cloudinaryService';
+import { getYtDlpCommonArgs } from './youtubeService';
 import { exec } from 'child_process';
 import util from 'util';
 import path from 'path';
@@ -60,7 +61,7 @@ export const addJobToQueue = (jobId: string) => {
       console.log(`[WORKER] Downloading ${job.sourceUrl} (quality=${job.quality}) ...`);
       try {
         const formatSelector = buildMp4FormatSelector(job.quality);
-        const downloadCommand = `${YT_DLP} -o "${rawFilePath}" -f "${formatSelector}" --no-playlist "${job.sourceUrl}"`;
+        const downloadCommand = `${YT_DLP} ${getYtDlpCommonArgs()} -o "${rawFilePath}" -f "${formatSelector}" --no-playlist "${job.sourceUrl}"`;
         console.log(`[WORKER] Running: ${downloadCommand}`);
         await execPromise(downloadCommand, { timeout: 300000 }); // 5 mins
       } catch (dlError: any) {

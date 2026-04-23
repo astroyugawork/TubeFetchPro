@@ -21,6 +21,21 @@ const getBinaryPath = () => {
 
 const YT_DLP = getBinaryPath();
 
+const COOKIES_PATH = process.env.COOKIES_PATH || '/app/cookies.txt';
+
+// Shared yt-dlp flags to improve reliability on cloud IPs:
+// - multiple YouTube player clients to bypass some bot checks
+// - cookies file (if present) to bypass "Sign in to confirm you're not a bot"
+export const getYtDlpCommonArgs = (): string => {
+  const parts: string[] = [
+    '--extractor-args "youtube:player_client=default,mweb,tv_embedded"',
+  ];
+  if (fs.existsSync(COOKIES_PATH)) {
+    parts.push(`--cookies "${COOKIES_PATH}"`);
+  }
+  return parts.join(' ');
+};
+
 export const resolveInputType = (inputUrl: string) => {
   if (inputUrl.includes('youtube.com/watch') || inputUrl.includes('youtu.be/')) {
     return 'single_video';
@@ -34,7 +49,7 @@ export const resolveInputType = (inputUrl: string) => {
 
 export const fetchVideoMetadata = async (videoUrl: string) => {
   try {
-    const command = `${YT_DLP} --print "%(id)s||%(title)s||%(thumbnail)s||%(duration)s||%(uploader)s" --no-warnings "${videoUrl}"`;
+    const command = `${YT_DLP} ${getYtDlpCommonArgs()} --print "%(id)s||%(title)s||%(thumbnail)s||%(duration)s||%(uploader)s" --no-warnings "${videoUrl}"`;
     console.log(`[EXEC] ${command}`);
     const { stdout } = await execPromise(command);
     const [videoId, title, thumbnail, duration, channelName] = stdout.trim().split('||');
@@ -57,7 +72,7 @@ export const fetchChannelVideos = async (channelUrl: string, limit: number = 30)
     // In --flat-playlist mode, per-entry `thumbnail`, `uploader`, and `channel`
     // come back as "NA". We rely on playlist_channel/playlist_uploader for the
     // channel name and build thumbnail URLs directly from the video ID.
-    const command = `${YT_DLP} --flat-playlist --playlist-end ${limit} --print "%(playlist_channel,playlist_uploader,channel,uploader)s||%(id)s||%(title)s||%(duration)s" --no-warnings --ignore-errors "${channelUrl}"`;
+    const command = `${YT_DLP} ${getYtDlpCommonArgs()} --flat-playlist --playlist-end ${limit} --print "%(playlist_channel,playlist_uploader,channel,uploader)s||%(id)s||%(title)s||%(duration)s" --no-warnings --ignore-errors "${channelUrl}"`;
     console.log(`[EXEC] ${command}`);
     const { stdout } = await execPromise(command, { maxBuffer: 1024 * 1024 * 10 });
 
