@@ -8,15 +8,31 @@ cloudinary.config({
 });
 
 
+const uploadLarge = (filePath: string, options: Record<string, any>): Promise<any> =>
+  new Promise((resolve, reject) => {
+    cloudinary.uploader.upload_large(
+      filePath,
+      { ...options, chunk_size: 20 * 1024 * 1024 }, // 20MB chunks
+      (err, result) => (err ? reject(err) : resolve(result))
+    );
+  });
+
 export const uploadToCloudinary = async (filePath: string, publicId: string, resourceType: 'video' | 'raw' | 'auto') => {
   try {
-    const result = await cloudinary.uploader.upload(filePath, {
+    const { size } = fs.statSync(filePath);
+    const mappedResource = resourceType === 'raw' ? 'auto' : resourceType;
+    const options = {
       public_id: publicId,
-      resource_type: resourceType === 'raw' ? 'auto' : resourceType, // Use 'auto' for mp3/raw
+      resource_type: mappedResource,
       folder: 'tubefetchpro',
-    });
+    };
 
-    // Cleanup local file after successful upload
+    // Cloudinary's basic upload endpoint caps at 100MB. Use chunked upload above that.
+    const LARGE_THRESHOLD = 90 * 1024 * 1024;
+    const result = size > LARGE_THRESHOLD
+      ? await uploadLarge(filePath, options)
+      : await cloudinary.uploader.upload(filePath, options);
+
     if (fs.existsSync(filePath)) {
       fs.unlinkSync(filePath);
     }

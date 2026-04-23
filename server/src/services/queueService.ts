@@ -1,10 +1,8 @@
 import PQueue from 'p-queue';
-import * as ffmpeg from 'fluent-ffmpeg';
 import VideoJob from '../models/VideoJob';
 import { convertToMp3 } from './ffmpegService';
 import { uploadToCloudinary } from './cloudinaryService';
 import { exec } from 'child_process';
-import { v4 as uuidv4 } from 'uuid';
 import util from 'util';
 import path from 'path';
 import fs from 'fs';
@@ -28,6 +26,17 @@ const getBinaryPath = () => {
 const YT_DLP = getBinaryPath();
 const queue = new PQueue({ concurrency: 1 });
 
+const MP4_HEIGHT: Record<string, number> = {
+  high: 1080,
+  medium: 720,
+  low: 480,
+};
+
+const buildMp4FormatSelector = (quality: string) => {
+  const height = MP4_HEIGHT[quality] || MP4_HEIGHT.high;
+  return `bestvideo[height<=${height}][ext=mp4]+bestaudio[ext=m4a]/best[height<=${height}][ext=mp4]/best[height<=${height}]`;
+};
+
 export const addJobToQueue = (jobId: string) => {
   console.log(`[WORKER] Job ${jobId} added to queue.`);
   queue.add(async () => {
@@ -48,10 +57,10 @@ export const addJobToQueue = (jobId: string) => {
       const rawFilePath = path.join(tempDir, `${job.videoId}_raw.mp4`);
       
       // 1. Download Video with yt-dlp
-      console.log(`[WORKER] Downloading ${job.sourceUrl} ...`);
+      console.log(`[WORKER] Downloading ${job.sourceUrl} (quality=${job.quality}) ...`);
       try {
-        // Add a 5 minute timeout for safety
-        const downloadCommand = `${YT_DLP} -o "${rawFilePath}" -f "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best" --no-playlist "${job.sourceUrl}"`;
+        const formatSelector = buildMp4FormatSelector(job.quality);
+        const downloadCommand = `${YT_DLP} -o "${rawFilePath}" -f "${formatSelector}" --no-playlist "${job.sourceUrl}"`;
         console.log(`[WORKER] Running: ${downloadCommand}`);
         await execPromise(downloadCommand, { timeout: 300000 }); // 5 mins
       } catch (dlError: any) {
@@ -68,11 +77,11 @@ export const addJobToQueue = (jobId: string) => {
 
       // 2. Convert if needed
       if (job.outputType === 'mp3') {
-        console.log(`[WORKER] Converting to MP3...`);
+        console.log(`[WORKER] Converting to MP3 (quality=${job.quality})...`);
         job.status = 'converting';
         await job.save();
         const mp3Path = path.join(tempDir, `${job.videoId}.mp3`);
-        await convertToMp3(rawFilePath, mp3Path);
+        await convertToMp3(rawFilePath, mp3Path, job.quality);
         finalFilePath = mp3Path;
         resourceType = 'auto';
       }

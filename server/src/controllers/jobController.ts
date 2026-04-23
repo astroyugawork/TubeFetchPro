@@ -3,7 +3,6 @@ import VideoJob from '../models/VideoJob';
 import UsageConsent from '../models/UsageConsent';
 import { fetchVideoMetadata } from '../services/youtubeService';
 import { addJobToQueue } from '../services/queueService';
-import mongoose from 'mongoose';
 
 export const createJob = async (req: Request, res: Response) => {
   try {

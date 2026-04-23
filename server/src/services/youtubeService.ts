@@ -54,9 +54,12 @@ export const fetchVideoMetadata = async (videoUrl: string) => {
 
 export const fetchChannelVideos = async (channelUrl: string, limit: number = 30) => {
   try {
-    const command = `${YT_DLP} --flat-playlist --playlist-end ${limit} --print "%(uploader)s||%(id)s||%(title)s||%(duration)s||%(thumbnail)s" --no-warnings "${channelUrl}"`;
+    // In --flat-playlist mode, per-entry `thumbnail`, `uploader`, and `channel`
+    // come back as "NA". We rely on playlist_channel/playlist_uploader for the
+    // channel name and build thumbnail URLs directly from the video ID.
+    const command = `${YT_DLP} --flat-playlist --playlist-end ${limit} --print "%(playlist_channel,playlist_uploader,channel,uploader)s||%(id)s||%(title)s||%(duration)s" --no-warnings --ignore-errors "${channelUrl}"`;
     console.log(`[EXEC] ${command}`);
-    const { stdout } = await execPromise(command);
+    const { stdout } = await execPromise(command, { maxBuffer: 1024 * 1024 * 10 });
 
     const lines = stdout.trim().split('\n');
     let channelName = '';
@@ -64,24 +67,28 @@ export const fetchChannelVideos = async (channelUrl: string, limit: number = 30)
       .filter(line => line.includes('||'))
       .map(line => {
         const parts = line.split('||');
-        if (parts.length === 5) {
-          channelName = parts[0];
-          const [_, videoId, title, duration, thumbnail] = parts;
-          return {
-            videoId,
-            title,
-            duration: parseInt(duration) || 0,
-            thumbnail,
-          };
-        }
-        return null;
+        if (parts.length < 4) return null;
+        const [uploader, videoId, title, duration] = parts;
+        if (!videoId || videoId === 'NA') return null;
+        if (uploader && uploader !== 'NA') channelName = uploader;
+        return {
+          videoId,
+          title,
+          duration: parseInt(duration) || 0,
+          thumbnail: `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
+        };
       })
-      .filter(v => v !== null);
+      .filter((v): v is NonNullable<typeof v> => v !== null);
+
+    if (!channelName) {
+      const handleMatch = channelUrl.match(/@([\w.-]+)/);
+      channelName = handleMatch ? `@${handleMatch[1]}` : 'YouTube Channel';
+    }
 
     return {
       channelUrl,
       channelName,
-      fetchedVideos: videos as any[],
+      fetchedVideos: videos,
     };
   } catch (error: any) {
     console.error(`[ERROR] yt-dlp channel fetch failed: ${error.message}`);

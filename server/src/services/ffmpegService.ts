@@ -18,10 +18,22 @@ const getFfmpegPath = () => {
 
 ffmpeg.setFfmpegPath(getFfmpegPath());
 
-export const convertToMp3 = async (inputPath: string, outputPath: string): Promise<string> => {
+const MP3_BITRATES: Record<string, string> = {
+  high: '320k',
+  medium: '192k',
+  low: '128k',
+};
+
+export const convertToMp3 = async (
+  inputPath: string,
+  outputPath: string,
+  quality: string = 'high'
+): Promise<string> => {
+  const bitrate = MP3_BITRATES[quality] || MP3_BITRATES.high;
   return new Promise((resolve, reject) => {
     ffmpeg(inputPath)
       .toFormat('mp3')
+      .audioBitrate(bitrate)
       .on('start', (commandLine) => {
         console.log(`Spawned FFmpeg with command: ${commandLine}`);
       })
@@ -31,7 +43,6 @@ export const convertToMp3 = async (inputPath: string, outputPath: string): Promi
       })
       .on('end', () => {
         console.log('FFmpeg processing finished!');
-        // Optional: Cleanup original video file if needed
         if (fs.existsSync(inputPath)) {
           fs.unlinkSync(inputPath);
         }
