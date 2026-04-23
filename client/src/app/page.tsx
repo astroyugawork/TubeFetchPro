@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import axios from 'axios';
 import StatusTracker from '@/components/StatusTracker';
 
@@ -42,6 +42,7 @@ export default function Home() {
   const [processing, setProcessing] = useState(false);
   const [history, setHistory] = useState<any[]>([]);
   const [userJobIds, setUserJobIds] = useState<string[]>([]);
+  const [dateFilter, setDateFilter] = useState<string>('all');
   const resultsRef = useRef<HTMLDivElement>(null);
   const historyRef = useRef<any[]>([]);
 
@@ -80,9 +81,9 @@ export default function Home() {
   const looksLikeYouTubeInput = (s: string) =>
     /^(https?:\/\/|www\.|youtube\.com|youtu\.be)/i.test(s) || s.startsWith('@');
 
-  const handleSearch = async (e?: React.FormEvent) => {
+  const handleSearch = async (e?: React.FormEvent, overrideQuery?: string) => {
     if (e) e.preventDefault();
-    const trimmed = query.trim();
+    const trimmed = (overrideQuery ?? query).trim();
     if (!trimmed) return setError('Paste a YouTube link or type something to search.');
     setError(''); setSuccess(''); setLoading(true);
     setVideoResult(null); setChannelData(null); setSelectedVideos(new Set());
@@ -181,6 +182,44 @@ export default function Home() {
   const fmt = (s: number) => s > 0 ? `${Math.floor(s / 60)}:${(s % 60).toString().padStart(2, '0')}` : '';
   const userJobs = history.filter(h => userJobIds.includes(h._id));
 
+  // Build distinct year and month buckets from the user's saved items.
+  const MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const monthLabel = (ym: string) => {
+    const [y, m] = ym.split('-');
+    return `${MONTH_NAMES[parseInt(m) - 1]} ${y}`;
+  };
+  const periods = useMemo(() => {
+    const years = new Map<string, number>();
+    const months = new Map<string, number>();
+    userJobs.forEach((j) => {
+      if (!j.createdAt) return;
+      const d = new Date(j.createdAt);
+      if (isNaN(d.getTime())) return;
+      const y = d.getFullYear().toString();
+      const ym = `${y}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+      years.set(y, (years.get(y) || 0) + 1);
+      months.set(ym, (months.get(ym) || 0) + 1);
+    });
+    return {
+      years: [...years.entries()].sort((a, b) => b[0].localeCompare(a[0])),
+      months: [...months.entries()].sort((a, b) => b[0].localeCompare(a[0])),
+    };
+  }, [userJobs]);
+
+  const filteredJobs = useMemo(() => {
+    if (dateFilter === 'all') return userJobs;
+    return userJobs.filter((j) => {
+      if (!j.createdAt) return false;
+      const d = new Date(j.createdAt);
+      if (isNaN(d.getTime())) return false;
+      const y = d.getFullYear().toString();
+      const ym = `${y}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+      return dateFilter === y || dateFilter === ym;
+    });
+  }, [userJobs, dateFilter]);
+
+  const showFilters = periods.years.length > 1 || periods.months.length > 1;
+
   const MP4_OPTIONS = [{ l: '1080p', q: 'high' }, { l: '720p', q: 'medium' }, { l: '480p', q: 'low' }];
   const MP3_OPTIONS = [{ l: '320 kbps', q: 'high' }, { l: '128 kbps', q: 'low' }];
 
@@ -221,8 +260,8 @@ export default function Home() {
           <p>Tip: paste a video/channel URL, a <span className="text-[#888]">@handle</span>, or just type keywords to search.</p>
           <div className="flex flex-wrap gap-1.5 pt-1">
             <span className="text-[#444]">Quick searches:</span>
-            {['stock market india', 'investing for beginners', 'crypto news 2026', 'personal finance'].map(s => (
-              <button key={s} onClick={() => { setQuery(s); setTimeout(() => handleSearch(), 0); }}
+            {['stock market prediction', 'stock market prediction for today', 'stock market prediction for tomorrow', 'stock market india', 'investing for beginners', 'crypto news 2026', 'personal finance'].map(s => (
+              <button key={s} onClick={() => { setQuery(s); handleSearch(undefined, s); }}
                 className="px-2 py-0.5 text-[10px] text-[#888] bg-[#181818] border border-[#252525] rounded-full hover:text-white hover:border-[#444] transition-colors">
                 {s}
               </button>
@@ -409,33 +448,68 @@ export default function Home() {
             </div>
           </div>
 
+          {/* Date filter */}
+          {showFilters && (
+            <div className="flex flex-wrap items-center gap-1.5 mb-3">
+              <span className="text-[10px] text-[#555] uppercase tracking-wider mr-1">Filter</span>
+              <button onClick={() => setDateFilter('all')}
+                className={`px-2.5 py-1 text-[11px] rounded-full border transition-colors ${dateFilter === 'all' ? 'bg-blue-500/15 text-blue-300 border-blue-500/40' : 'text-[#888] bg-[#181818] border-[#252525] hover:text-white hover:border-[#444]'}`}>
+                All · {userJobs.length}
+              </button>
+              {periods.years.length > 1 && periods.years.map(([y, count]) => (
+                <button key={`y-${y}`} onClick={() => setDateFilter(y)}
+                  className={`px-2.5 py-1 text-[11px] rounded-full border transition-colors ${dateFilter === y ? 'bg-blue-500/15 text-blue-300 border-blue-500/40' : 'text-[#888] bg-[#181818] border-[#252525] hover:text-white hover:border-[#444]'}`}>
+                  {y} · {count}
+                </button>
+              ))}
+              {periods.months.map(([ym, count]) => (
+                <button key={`m-${ym}`} onClick={() => setDateFilter(ym)}
+                  className={`px-2.5 py-1 text-[11px] rounded-full border transition-colors ${dateFilter === ym ? 'bg-blue-500/15 text-blue-300 border-blue-500/40' : 'text-[#888] bg-[#181818] border-[#252525] hover:text-white hover:border-[#444]'}`}>
+                  {monthLabel(ym)} · {count}
+                </button>
+              ))}
+            </div>
+          )}
+
           {userJobs.length === 0 ? (
             <div className="p-8 text-center bg-[#121212] border border-dashed border-[#222] rounded-xl">
               <IconCloud className="w-6 h-6 text-[#333] mx-auto mb-2" />
               <p className="text-sm text-[#666]">Your library is empty.</p>
               <p className="text-xs text-[#444] mt-1">Tap <span className="text-blue-400">Save to library</span> on any video to keep it here.</p>
             </div>
+          ) : filteredJobs.length === 0 ? (
+            <div className="p-6 text-center bg-[#121212] border border-dashed border-[#222] rounded-xl">
+              <p className="text-sm text-[#666]">No saved videos in this period.</p>
+              <button onClick={() => setDateFilter('all')} className="text-xs text-blue-400 hover:text-blue-300 mt-1">Show all</button>
+            </div>
           ) : (
             <div className="space-y-2">
-              {userJobs.map(job => (
-                <div key={job._id} className="flex items-center gap-4 p-3 bg-[#141414] border border-[#222] rounded-xl hover:border-[#2a2a2a] transition-colors">
-                  <div className="w-24 aspect-video rounded-md overflow-hidden bg-black shrink-0 relative">
-                    {job.thumbnail && <img src={job.thumbnail} className="w-full h-full object-cover" alt="" />}
-                    <span className="absolute top-1 left-1 px-1.5 py-0.5 bg-black/80 text-[9px] text-white rounded font-medium">
-                      {job.outputType?.toUpperCase()}
-                    </span>
+              {filteredJobs.map(job => {
+                const savedAt = job.createdAt ? new Date(job.createdAt) : null;
+                const savedLabel = savedAt && !isNaN(savedAt.getTime())
+                  ? savedAt.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
+                  : '';
+                return (
+                  <div key={job._id} className="flex items-center gap-4 p-3 bg-[#141414] border border-[#222] rounded-xl hover:border-[#2a2a2a] transition-colors">
+                    <div className="w-24 aspect-video rounded-md overflow-hidden bg-black shrink-0 relative">
+                      {job.thumbnail && <img src={job.thumbnail} className="w-full h-full object-cover" alt="" />}
+                      <span className="absolute top-1 left-1 px-1.5 py-0.5 bg-black/80 text-[9px] text-white rounded font-medium">
+                        {job.outputType?.toUpperCase()}
+                      </span>
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm text-white truncate font-medium">{job.title || 'Untitled'}</p>
+                      <p className="text-[11px] text-[#555] mt-0.5">
+                        {job.fileSize ? `${(job.fileSize / 1048576).toFixed(1)} MB` : 'Processing...'}
+                        {savedLabel && <span className="text-[#444]"> · saved {savedLabel}</span>}
+                      </p>
+                    </div>
+                    <div className="w-64 shrink-0">
+                      <StatusTracker status={job.status} error={job.errorMessage} downloadUrl={job.downloadUrl} onDelete={() => deleteJob(job._id)} />
+                    </div>
                   </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm text-white truncate font-medium">{job.title || 'Untitled'}</p>
-                    <p className="text-[11px] text-[#555] mt-0.5">
-                      {job.fileSize ? `${(job.fileSize / 1048576).toFixed(1)} MB` : 'Processing...'}
-                    </p>
-                  </div>
-                  <div className="w-64 shrink-0">
-                    <StatusTracker status={job.status} error={job.errorMessage} downloadUrl={job.downloadUrl} onDelete={() => deleteJob(job._id)} />
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </section>
