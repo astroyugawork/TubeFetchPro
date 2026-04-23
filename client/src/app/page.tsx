@@ -572,7 +572,7 @@ export default function Home() {
           ) : filteredJobs.length === 0 ? (
             <div className="p-6 text-center bg-[#121212] border border-dashed border-[#222] rounded-xl">
               <p className="text-sm text-[#666]">No saved videos in this period.</p>
-              <button onClick={() => setDateFilter('all')} className="text-xs text-blue-400 hover:text-blue-300 mt-1">Show all</button>
+              <button onClick={clearFilters} className="text-xs text-blue-400 hover:text-blue-300 mt-1">Show all</button>
             </div>
           ) : (
             <div className="space-y-2">
