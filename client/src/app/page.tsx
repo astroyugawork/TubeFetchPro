@@ -105,7 +105,12 @@ export default function Home() {
     setSuccess('Preparing your download — your browser will save the file when ready.');
   };
 
-  const saveToLibrary = async (videoId: string, type: 'mp3' | 'mp4', quality = 'high') => {
+  // Library saves default to smaller qualities to stay under Cloudinary's 100MB free-tier cap.
+  // Users can still get full quality via the direct Download buttons.
+  const saveQualityFor = (type: 'mp3' | 'mp4') => (type === 'mp4' ? 'low' : 'medium');
+
+  const saveToLibrary = async (videoId: string, type: 'mp3' | 'mp4') => {
+    const quality = saveQualityFor(type);
     setProcessing(true); setError('');
     try {
       const res = await axios.post(`${API_BASE}/jobs/create`, {
@@ -115,24 +120,27 @@ export default function Home() {
       saveIds([res.data._id]);
       fetchHistory();
       setSuccess(`Saving to your library: ${res.data.title}`);
-    } catch { setError('Failed to save to library.'); }
-    finally { setProcessing(false); }
+    } catch (err: any) {
+      setError(err.response?.data?.error || 'Failed to save to library.');
+    } finally { setProcessing(false); }
   };
 
   const batchSave = async (type: 'mp3' | 'mp4') => {
     if (!selectedVideos.size || !channelData) return;
+    const quality = saveQualityFor(type);
     setProcessing(true); setError('');
     try {
       const items = channelData.fetchedVideos
         .filter((v: any) => selectedVideos.has(v.videoId))
         .map((v: any) => ({ sourceUrl: `https://www.youtube.com/watch?v=${v.videoId}`, videoId: v.videoId, title: v.title, thumbnail: v.thumbnail, duration: v.duration }));
-      const res = await axios.post(`${API_BASE}/jobs/batch`, { items, outputType: type, quality: 'high', consentAccepted: true });
+      const res = await axios.post(`${API_BASE}/jobs/batch`, { items, outputType: type, quality, consentAccepted: true });
       saveIds(res.data.jobIds);
       fetchHistory();
       setSuccess(`${res.data.jobIds.length} videos saving to your library.`);
       setSelectedVideos(new Set());
-    } catch { setError('Batch save failed.'); }
-    finally { setProcessing(false); }
+    } catch (err: any) {
+      setError(err.response?.data?.error || 'Batch save failed.');
+    } finally { setProcessing(false); }
   };
 
   const toggleVideo = (id: string) => setSelectedVideos(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
@@ -270,7 +278,7 @@ export default function Home() {
                 </div>
                 <div>
                   <p className="text-sm font-medium text-white">Save to your library</p>
-                  <p className="text-[11px] text-[#666]">Keep a copy online — watch again on any device</p>
+                  <p className="text-[11px] text-[#666]">Keep a compressed copy online (480p video / 192 kbps audio) — watch again on any device</p>
                 </div>
               </div>
               <div className="flex gap-2 mt-3">

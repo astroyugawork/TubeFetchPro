@@ -24,8 +24,13 @@ const YT_DLP = getYtDlpPath();
 
 const MP4_HEIGHT: Record<string, number> = { high: 1080, medium: 720, low: 480 };
 
+// Keep full Unicode version for the RFC 5987 filename*= header (percent-encoded).
 const sanitizeFilename = (s: string) =>
   s.replace(/[\\/:*?"<>|\x00-\x1f]/g, '').replace(/\s+/g, ' ').slice(0, 120).trim() || 'download';
+
+// ASCII-only version for the legacy filename= header. Node rejects non-ASCII there.
+const asciiFilename = (s: string) =>
+  s.replace(/[^\x20-\x7E]/g, '').replace(/"/g, '').replace(/\s+/g, ' ').trim() || 'download';
 
 export const resolveInput = async (req: Request, res: Response) => {
   try {
@@ -88,10 +93,10 @@ export const directDownload = async (req: Request, res: Response) => {
     }
 
     const safe = sanitizeFilename(title);
-    const filename = `${safe}.${type}`;
-    const encoded = encodeURIComponent(filename);
+    const ascii = asciiFilename(safe);
+    const encoded = encodeURIComponent(`${safe}.${type}`);
 
-    res.setHeader('Content-Disposition', `attachment; filename="${safe}.${type}"; filename*=UTF-8''${encoded}`);
+    res.setHeader('Content-Disposition', `attachment; filename="${ascii}.${type}"; filename*=UTF-8''${encoded}`);
     res.setHeader('Content-Type', type === 'mp3' ? 'audio/mpeg' : 'video/mp4');
     res.setHeader('Content-Length', fs.statSync(finalPath).size.toString());
 
