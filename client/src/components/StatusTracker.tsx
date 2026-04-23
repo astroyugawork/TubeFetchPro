@@ -1,5 +1,5 @@
 'use client';
-import React from 'react';
+import React, { useState } from 'react';
 
 type Status = 'pending' | 'validating' | 'processing' | 'converting' | 'uploading' | 'completed' | 'failed';
 
@@ -8,6 +8,8 @@ interface StatusTrackerProps {
   error?: string;
   downloadUrl?: string;
   onDelete?: () => void;
+  onRetry?: () => void | Promise<void>;
+  onView?: () => void;
 }
 
 const STATUS_LABEL: Record<Status, string> = {
@@ -27,32 +29,75 @@ function getStepIndex(status: Status): number {
   return map[status] ?? -1;
 }
 
-export default function StatusTracker({ status, error, downloadUrl, onDelete }: StatusTrackerProps) {
+export default function StatusTracker({ status, error, downloadUrl, onDelete, onRetry, onView }: StatusTrackerProps) {
   const step = getStepIndex(status);
   const failed = status === 'failed';
   const done = status === 'completed';
   const totalSteps = 4;
+
+  const [retrying, setRetrying] = useState(false);
+  const handleRetry = async () => {
+    if (!onRetry || retrying) return;
+    setRetrying(true);
+    try { await onRetry(); } finally { setRetrying(false); }
+  };
 
   return (
     <div className="flex items-center gap-3">
       {/* Progress / action area */}
       <div className="flex-1 min-w-0">
         {done && downloadUrl ? (
-          <a
-            href={downloadUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-green-500 text-black text-xs font-semibold rounded-md hover:bg-green-400 transition-colors"
-          >
-            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2.5">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5 5-5M12 15V3" />
-            </svg>
-            Download
-          </a>
-        ) : failed ? (
           <div className="flex items-center gap-1.5">
-            <span className="w-1.5 h-1.5 rounded-full bg-red-500" />
-            <span className="text-xs text-red-400 truncate" title={error}>{error || 'Failed'}</span>
+            {onView && (
+              <button
+                onClick={onView}
+                className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-[#1e1e1e] border border-[#2a2a2a] text-[#ddd] text-xs font-medium rounded-md hover:bg-[#262626] hover:text-white hover:border-[#444] transition-colors"
+                title="Play in browser"
+              >
+                <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M8 5v14l11-7z" />
+                </svg>
+                View
+              </button>
+            )}
+            <a
+              href={downloadUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-green-500 text-black text-xs font-semibold rounded-md hover:bg-green-400 transition-colors"
+            >
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2.5">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5 5-5M12 15V3" />
+              </svg>
+              Download
+            </a>
+          </div>
+        ) : failed ? (
+          <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1.5 flex-1 min-w-0">
+              <span className="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0" />
+              <span className="text-xs text-red-400 truncate" title={error}>{error || 'Failed'}</span>
+            </div>
+            {onRetry && (
+              <button
+                onClick={handleRetry}
+                disabled={retrying}
+                className="shrink-0 inline-flex items-center gap-1 px-2 py-1 bg-blue-500/15 text-blue-300 text-[10px] font-semibold rounded border border-blue-500/30 hover:bg-blue-500/25 hover:text-blue-200 disabled:opacity-50 disabled:cursor-wait transition-colors"
+                title="Retry"
+              >
+                {retrying ? (
+                  <svg className="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                  </svg>
+                ) : (
+                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2.5">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9M20 20v-5h-.581m0 0a8.003 8.003 0 01-15.357-2" />
+                  </svg>
+                )}
+                {retrying ? 'Retrying' : 'Retry'}
+              </button>
+            )}
           </div>
         ) : (
           <div>

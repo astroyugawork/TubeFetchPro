@@ -119,6 +119,25 @@ export const getJob = async (req: Request, res: Response) => {
   }
 };
 
+export const retryJob = async (req: Request, res: Response) => {
+  try {
+    const job = await VideoJob.findById(req.params.id);
+    if (!job) return res.status(404).json({ error: 'Job not found' });
+    if (['pending', 'validating', 'processing', 'converting', 'uploading'].includes(job.status)) {
+      return res.status(400).json({ error: 'Job is already in progress' });
+    }
+    job.status = 'pending';
+    job.errorMessage = undefined;
+    job.downloadUrl = undefined;
+    job.fileSize = undefined;
+    await job.save();
+    addJobToQueue(job._id.toString());
+    res.json(job);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
 export const deleteJob = async (req: Request, res: Response) => {
   try {
     const job = await VideoJob.findByIdAndDelete(req.params.id);

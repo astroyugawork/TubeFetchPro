@@ -42,7 +42,10 @@ export default function Home() {
   const [processing, setProcessing] = useState(false);
   const [history, setHistory] = useState<any[]>([]);
   const [userJobIds, setUserJobIds] = useState<string[]>([]);
-  const [dateFilter, setDateFilter] = useState<string>('all');
+  const [selectedYear, setSelectedYear] = useState<string>('all');
+  const [selectedMonth, setSelectedMonth] = useState<string>('all');
+  const [selectedCategory, setSelectedCategory] = useState<string>('all');
+  const [viewingJob, setViewingJob] = useState<any>(null);
   const resultsRef = useRef<HTMLDivElement>(null);
   const historyRef = useRef<any[]>([]);
 
@@ -66,6 +69,17 @@ export default function Home() {
     const t = setTimeout(() => setSuccess(''), 5000);
     return () => clearTimeout(t);
   }, [success]);
+
+  useEffect(() => {
+    if (!viewingJob) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setViewingJob(null); };
+    window.addEventListener('keydown', onKey);
+    document.body.style.overflow = 'hidden';
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      document.body.style.overflow = '';
+    };
+  }, [viewingJob]);
 
   const fetchHistory = async () => {
     try { setHistory((await axios.get(`${API_BASE}/jobs/history`)).data); } catch {}
@@ -179,46 +193,83 @@ export default function Home() {
     } catch {}
   };
 
+  const retryJob = async (id: string) => {
+    setError('');
+    try {
+      const res = await axios.post(`${API_BASE}/jobs/${id}/retry`);
+      setHistory(prev => prev.map(h => h._id === id ? res.data : h));
+      setSuccess('Retrying download...');
+    } catch (err: any) {
+      setError(err.response?.data?.error || 'Failed to retry.');
+    }
+  };
+
   const fmt = (s: number) => s > 0 ? `${Math.floor(s / 60)}:${(s % 60).toString().padStart(2, '0')}` : '';
   const userJobs = history.filter(h => userJobIds.includes(h._id));
 
-  // Build distinct year and month buckets from the user's saved items.
-  const MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-  const monthLabel = (ym: string) => {
-    const [y, m] = ym.split('-');
-    return `${MONTH_NAMES[parseInt(m) - 1]} ${y}`;
+  const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+
+  // Auto-categorize saved videos from their title. Ordered by specificity — first match wins.
+  const CATEGORY_RULES: Array<[string, RegExp]> = [
+    ['Stock Prediction', /\b(prediction|forecast|tomorrow|today|outlook|target|price action)\b/i],
+    ['Stock Market',     /\b(stock|market|nifty|sensex|bse|nse|ipo|sector|shares?)\b/i],
+    ['Crypto',           /\b(crypto|bitcoin|ethereum|btc|eth|altcoin|blockchain|solana|xrp)\b/i],
+    ['Investing',        /\b(investing|invest(?:ment|or)?|portfolio|mutual fund|sip|etf)\b/i],
+    ['Finance',          /\b(finance|money|wealth|savings|budget|loan|tax|credit)\b/i],
+    ['News',             /\b(news|breaking|update|headlines|live)\b/i],
+    ['Tutorial',         /\b(tutorial|how to|guide|learn|course|lesson|explained)\b/i],
+    ['Music',            /\b(song|music|lofi|lo-fi|remix|cover|official video)\b/i],
+  ];
+  const deriveCategory = (title: string): string => {
+    if (!title) return 'Other';
+    for (const [cat, re] of CATEGORY_RULES) {
+      if (re.test(title)) return cat;
+    }
+    return 'Other';
   };
-  const periods = useMemo(() => {
-    const years = new Map<string, number>();
-    const months = new Map<string, number>();
-    userJobs.forEach((j) => {
+
+  const jobsWithCategory = useMemo(
+    () => userJobs.map((j) => ({ ...j, _category: deriveCategory(j.title || '') })),
+    [userJobs]
+  );
+
+  // Extract distinct years, months, and categories present for dropdown options.
+  const { yearsPresent, monthsPresent, categoriesPresent } = useMemo(() => {
+    const ys = new Set<string>();
+    const ms = new Set<number>();
+    const cs = new Set<string>();
+    jobsWithCategory.forEach((j) => {
+      cs.add(j._category);
       if (!j.createdAt) return;
       const d = new Date(j.createdAt);
       if (isNaN(d.getTime())) return;
-      const y = d.getFullYear().toString();
-      const ym = `${y}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-      years.set(y, (years.get(y) || 0) + 1);
-      months.set(ym, (months.get(ym) || 0) + 1);
+      ys.add(d.getFullYear().toString());
+      ms.add(d.getMonth() + 1);
     });
     return {
-      years: [...years.entries()].sort((a, b) => b[0].localeCompare(a[0])),
-      months: [...months.entries()].sort((a, b) => b[0].localeCompare(a[0])),
+      yearsPresent: [...ys].sort((a, b) => b.localeCompare(a)),
+      monthsPresent: [...ms].sort((a, b) => a - b),
+      categoriesPresent: [...cs].sort(),
     };
-  }, [userJobs]);
+  }, [jobsWithCategory]);
 
   const filteredJobs = useMemo(() => {
-    if (dateFilter === 'all') return userJobs;
-    return userJobs.filter((j) => {
-      if (!j.createdAt) return false;
-      const d = new Date(j.createdAt);
-      if (isNaN(d.getTime())) return false;
-      const y = d.getFullYear().toString();
-      const ym = `${y}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-      return dateFilter === y || dateFilter === ym;
+    if (selectedYear === 'all' && selectedMonth === 'all' && selectedCategory === 'all') return jobsWithCategory;
+    return jobsWithCategory.filter((j) => {
+      if (selectedCategory !== 'all' && j._category !== selectedCategory) return false;
+      if (selectedYear !== 'all' || selectedMonth !== 'all') {
+        if (!j.createdAt) return false;
+        const d = new Date(j.createdAt);
+        if (isNaN(d.getTime())) return false;
+        if (selectedYear !== 'all' && d.getFullYear().toString() !== selectedYear) return false;
+        if (selectedMonth !== 'all' && (d.getMonth() + 1).toString() !== selectedMonth) return false;
+      }
+      return true;
     });
-  }, [userJobs, dateFilter]);
+  }, [jobsWithCategory, selectedYear, selectedMonth, selectedCategory]);
 
-  const showFilters = periods.years.length > 1 || periods.months.length > 1;
+  const filterActive = selectedYear !== 'all' || selectedMonth !== 'all' || selectedCategory !== 'all';
+  const clearFilters = () => { setSelectedYear('all'); setSelectedMonth('all'); setSelectedCategory('all'); };
 
   const MP4_OPTIONS = [{ l: '1080p', q: 'high' }, { l: '720p', q: 'medium' }, { l: '480p', q: 'low' }];
   const MP3_OPTIONS = [{ l: '320 kbps', q: 'high' }, { l: '128 kbps', q: 'low' }];
@@ -448,26 +499,67 @@ export default function Home() {
             </div>
           </div>
 
-          {/* Date filter */}
-          {showFilters && (
-            <div className="flex flex-wrap items-center gap-1.5 mb-3">
-              <span className="text-[10px] text-[#555] uppercase tracking-wider mr-1">Filter</span>
-              <button onClick={() => setDateFilter('all')}
-                className={`px-2.5 py-1 text-[11px] rounded-full border transition-colors ${dateFilter === 'all' ? 'bg-blue-500/15 text-blue-300 border-blue-500/40' : 'text-[#888] bg-[#181818] border-[#252525] hover:text-white hover:border-[#444]'}`}>
-                All · {userJobs.length}
-              </button>
-              {periods.years.length > 1 && periods.years.map(([y, count]) => (
-                <button key={`y-${y}`} onClick={() => setDateFilter(y)}
-                  className={`px-2.5 py-1 text-[11px] rounded-full border transition-colors ${dateFilter === y ? 'bg-blue-500/15 text-blue-300 border-blue-500/40' : 'text-[#888] bg-[#181818] border-[#252525] hover:text-white hover:border-[#444]'}`}>
-                  {y} · {count}
+          {/* Date filter: Year + Month dropdowns */}
+          {userJobs.length > 0 && (
+            <div className="flex flex-wrap items-center gap-2 mb-4">
+              <span className="text-[10px] text-[#555] uppercase tracking-wider">Filter</span>
+              <div className="relative">
+                <select
+                  value={selectedCategory}
+                  onChange={(e) => setSelectedCategory(e.target.value)}
+                  className="appearance-none pl-3 pr-8 py-1.5 text-xs bg-[#181818] border border-[#252525] rounded-md text-[#ddd] hover:border-[#444] focus:border-blue-500/50 focus:outline-none cursor-pointer"
+                >
+                  <option value="all">All categories</option>
+                  {categoriesPresent.map((c) => (
+                    <option key={c} value={c}>{c}</option>
+                  ))}
+                </select>
+                <svg className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 w-3 h-3 text-[#666]" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                </svg>
+              </div>
+              <div className="relative">
+                <select
+                  value={selectedYear}
+                  onChange={(e) => setSelectedYear(e.target.value)}
+                  className="appearance-none pl-3 pr-8 py-1.5 text-xs bg-[#181818] border border-[#252525] rounded-md text-[#ddd] hover:border-[#444] focus:border-blue-500/50 focus:outline-none cursor-pointer"
+                >
+                  <option value="all">All years</option>
+                  {yearsPresent.map((y) => (
+                    <option key={y} value={y}>{y}</option>
+                  ))}
+                </select>
+                <svg className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 w-3 h-3 text-[#666]" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                </svg>
+              </div>
+              <div className="relative">
+                <select
+                  value={selectedMonth}
+                  onChange={(e) => setSelectedMonth(e.target.value)}
+                  className="appearance-none pl-3 pr-8 py-1.5 text-xs bg-[#181818] border border-[#252525] rounded-md text-[#ddd] hover:border-[#444] focus:border-blue-500/50 focus:outline-none cursor-pointer"
+                >
+                  <option value="all">All months</option>
+                  {monthsPresent.map((m) => (
+                    <option key={m} value={String(m)}>{MONTH_NAMES[m - 1]}</option>
+                  ))}
+                </select>
+                <svg className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 w-3 h-3 text-[#666]" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                </svg>
+              </div>
+              {filterActive && (
+                <button
+                  onClick={clearFilters}
+                  className="px-2.5 py-1.5 text-[11px] text-[#888] hover:text-red-400 transition-colors"
+                  title="Clear filters"
+                >
+                  Clear
                 </button>
-              ))}
-              {periods.months.map(([ym, count]) => (
-                <button key={`m-${ym}`} onClick={() => setDateFilter(ym)}
-                  className={`px-2.5 py-1 text-[11px] rounded-full border transition-colors ${dateFilter === ym ? 'bg-blue-500/15 text-blue-300 border-blue-500/40' : 'text-[#888] bg-[#181818] border-[#252525] hover:text-white hover:border-[#444]'}`}>
-                  {monthLabel(ym)} · {count}
-                </button>
-              ))}
+              )}
+              <span className="ml-auto text-[11px] text-[#555]">
+                Showing {filteredJobs.length} of {userJobs.length}
+              </span>
             </div>
           )}
 
@@ -499,13 +591,20 @@ export default function Home() {
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className="text-sm text-white truncate font-medium">{job.title || 'Untitled'}</p>
-                      <p className="text-[11px] text-[#555] mt-0.5">
-                        {job.fileSize ? `${(job.fileSize / 1048576).toFixed(1)} MB` : 'Processing...'}
-                        {savedLabel && <span className="text-[#444]"> · saved {savedLabel}</span>}
-                      </p>
+                      <div className="flex items-center gap-2 mt-1">
+                        {job._category && (
+                          <span className="px-1.5 py-0.5 text-[9px] font-medium text-blue-300 bg-blue-500/10 border border-blue-500/25 rounded uppercase tracking-wide">
+                            {job._category}
+                          </span>
+                        )}
+                        <p className="text-[11px] text-[#555] truncate">
+                          {job.fileSize ? `${(job.fileSize / 1048576).toFixed(1)} MB` : 'Processing...'}
+                          {savedLabel && <span className="text-[#444]"> · saved {savedLabel}</span>}
+                        </p>
+                      </div>
                     </div>
                     <div className="w-64 shrink-0">
-                      <StatusTracker status={job.status} error={job.errorMessage} downloadUrl={job.downloadUrl} onDelete={() => deleteJob(job._id)} />
+                      <StatusTracker status={job.status} error={job.errorMessage} downloadUrl={job.downloadUrl} onDelete={() => deleteJob(job._id)} onRetry={() => retryJob(job._id)} onView={() => setViewingJob(job)} />
                     </div>
                   </div>
                 );
@@ -518,6 +617,62 @@ export default function Home() {
       <footer className="mt-20 pt-6 border-t border-[#1a1a1a] text-center">
         <p className="text-[11px] text-[#333]">TubeFetch · For personal and legal use only. Respect content creators and copyright.</p>
       </footer>
+
+      {/* Player modal */}
+      {viewingJob && (
+        <div
+          className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4"
+          onClick={() => setViewingJob(null)}
+        >
+          <div
+            className="relative bg-[#0f0f0f] border border-[#222] rounded-xl overflow-hidden max-w-4xl w-full max-h-[90vh] flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-4 p-4 border-b border-[#222]">
+              <div className="min-w-0">
+                <p className="text-sm text-white font-medium truncate">{viewingJob.title || 'Untitled'}</p>
+                <p className="text-[11px] text-[#555] mt-0.5">
+                  {viewingJob.outputType?.toUpperCase()}
+                  {viewingJob.fileSize ? ` · ${(viewingJob.fileSize / 1048576).toFixed(1)} MB` : ''}
+                </p>
+              </div>
+              <button
+                onClick={() => setViewingJob(null)}
+                className="shrink-0 p-1.5 text-[#888] hover:text-white hover:bg-[#1e1e1e] rounded-md transition-colors"
+                title="Close (Esc)"
+                aria-label="Close"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <div className="flex-1 bg-black flex items-center justify-center overflow-hidden">
+              {viewingJob.outputType === 'mp3' ? (
+                <div className="w-full p-8 flex flex-col items-center gap-4">
+                  {viewingJob.thumbnail && (
+                    <img src={viewingJob.thumbnail} alt="" className="max-h-64 rounded-lg" />
+                  )}
+                  <audio
+                    src={viewingJob.downloadUrl}
+                    controls
+                    autoPlay
+                    className="w-full max-w-xl"
+                  />
+                </div>
+              ) : (
+                <video
+                  src={viewingJob.downloadUrl}
+                  poster={viewingJob.thumbnail}
+                  controls
+                  autoPlay
+                  className="max-w-full max-h-[75vh]"
+                />
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
