@@ -6,8 +6,11 @@ import connectDB from './config/db';
 
 const PORT = process.env.PORT || 5000;
 
-connectDB().then(() => {
-  app.listen(Number(PORT), '0.0.0.0', () => {
-    console.log(`Server running in ${process.env.NODE_ENV || 'development'} mode on port ${PORT}`);
-  });
+// Start HTTP server first so health check is always reachable, even if DB fails.
+app.listen(Number(PORT), '0.0.0.0', () => {
+  console.log(`Server running in ${process.env.NODE_ENV || 'development'} mode on port ${PORT}`);
+});
+
+connectDB().catch((err) => {
+  console.error(`[FATAL] Database connection failed: ${err.message}`);
 });
