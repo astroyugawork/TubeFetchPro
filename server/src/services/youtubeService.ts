@@ -28,7 +28,7 @@ const COOKIES_PATH = process.env.COOKIES_PATH || '/app/cookies.txt';
 // - cookies file (if present) to bypass "Sign in to confirm you're not a bot"
 export const getYtDlpCommonArgs = (): string => {
   const parts: string[] = [
-    '--extractor-args "youtube:player_client=default,mweb,tv_embedded"',
+    '--extractor-args "youtube:player_client=default,mweb,web_embedded,android_vr"',
   ];
   if (fs.existsSync(COOKIES_PATH)) {
     parts.push(`--cookies "${COOKIES_PATH}"`);
