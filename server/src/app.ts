@@ -2,6 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import morgan from 'morgan';
+import fs from 'fs';
 import rateLimit from 'express-rate-limit';
 import youtubeRoutes from './routes/youtubeRoutes';
 import jobRoutes from './routes/jobRoutes';
@@ -26,7 +27,12 @@ app.use('/api/', limiter);
 
 // Health check - before ALL middleware
 app.get(['/health', '/api/health'], (req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+  const cookiesPath = process.env.COOKIES_PATH || '/app/cookies.txt';
+  res.json({
+    status: 'ok',
+    timestamp: new Date().toISOString(),
+    cookies: fs.existsSync(cookiesPath),
+  });
 });
 
 // Middlewares
