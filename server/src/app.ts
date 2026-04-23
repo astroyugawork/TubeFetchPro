@@ -8,6 +8,9 @@ import jobRoutes from './routes/jobRoutes';
 
 const app = express();
 
+// Railway/Vercel/etc sit behind a proxy — trust it so req.ip is correct for rate-limit.
+app.set('trust proxy', 1);
+
 app.use(morgan('dev'));
 
 // Rate Limiting
