@@ -76,19 +76,37 @@ export default function Home() {
     localStorage.setItem('tubefetch_jobs', JSON.stringify(updated));
   };
 
+  // If input looks like a URL or @handle, fetch the channel/video. Otherwise, search.
+  const looksLikeYouTubeInput = (s: string) =>
+    /^(https?:\/\/|www\.|youtube\.com|youtu\.be)/i.test(s) || s.startsWith('@');
+
   const handleSearch = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
-    if (!query.trim()) return setError('Paste a YouTube URL to get started.');
+    const trimmed = query.trim();
+    if (!trimmed) return setError('Paste a YouTube link or type something to search.');
     setError(''); setSuccess(''); setLoading(true);
     setVideoResult(null); setChannelData(null); setSelectedVideos(new Set());
     try {
-      const res = await axios.post(`${API_BASE}/youtube/channel-videos`, { channelUrl: query });
-      if (res.data.fetchedVideos?.length > 1) setChannelData(res.data);
-      else if (res.data.fetchedVideos?.length === 1) setVideoResult(res.data.fetchedVideos[0]);
-      else setError('Nothing found. Check the URL and try again.');
+      if (looksLikeYouTubeInput(trimmed)) {
+        const res = await axios.post(`${API_BASE}/youtube/channel-videos`, { channelUrl: trimmed });
+        if (res.data.fetchedVideos?.length > 1) setChannelData(res.data);
+        else if (res.data.fetchedVideos?.length === 1) setVideoResult(res.data.fetchedVideos[0]);
+        else setError('Nothing found. Check the URL and try again.');
+      } else {
+        const res = await axios.post(`${API_BASE}/youtube/search`, { query: trimmed, limit: 24 });
+        if (res.data.videos?.length) {
+          setChannelData({
+            channelName: `Search: "${trimmed}"`,
+            fetchedVideos: res.data.videos,
+            isSearch: true,
+          });
+        } else {
+          setError('No results. Try different keywords.');
+        }
+      }
       setTimeout(() => resultsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 100);
     } catch (err: any) {
-      setError(err.response?.data?.error || 'Could not connect. Check the URL or try again.');
+      setError(err.response?.data?.error || 'Could not connect. Try again.');
     } finally { setLoading(false); }
   };
 
@@ -185,7 +203,7 @@ export default function Home() {
           type="text"
           value={query}
           onChange={e => setQuery(e.target.value)}
-          placeholder="https://youtube.com/watch?v=...  or  https://youtube.com/@channel"
+          placeholder="Paste a YouTube link  ·  or search a topic (e.g. stock market india)"
           className="flex-1 h-12 px-4 rounded-lg bg-[#181818] border border-[#282828] text-sm text-white placeholder:text-[#444] outline-none focus:border-[#555] transition-colors"
         />
         <button
@@ -199,7 +217,18 @@ export default function Home() {
 
       {/* Hint row */}
       {!videoResult && !channelData && !error && (
-        <p className="text-xs text-[#555] mb-6">Tip: works with single videos, Shorts, and full channel handles like <span className="text-[#888]">@channelname</span>.</p>
+        <div className="text-xs text-[#555] mb-6 space-y-1">
+          <p>Tip: paste a video/channel URL, a <span className="text-[#888]">@handle</span>, or just type keywords to search.</p>
+          <div className="flex flex-wrap gap-1.5 pt-1">
+            <span className="text-[#444]">Quick searches:</span>
+            {['stock market india', 'investing for beginners', 'crypto news 2026', 'personal finance'].map(s => (
+              <button key={s} onClick={() => { setQuery(s); setTimeout(() => handleSearch(), 0); }}
+                className="px-2 py-0.5 text-[10px] text-[#888] bg-[#181818] border border-[#252525] rounded-full hover:text-white hover:border-[#444] transition-colors">
+                {s}
+              </button>
+            ))}
+          </div>
+        </div>
       )}
 
       {/* Alerts */}
@@ -350,8 +379,9 @@ export default function Home() {
                       {v.duration > 0 && <span className="absolute bottom-2 right-2 px-1.5 py-0.5 bg-black/80 text-[10px] text-white rounded">{fmt(v.duration)}</span>}
                     </div>
                     <div className="p-3">
-                      <p className="text-xs text-[#ccc] line-clamp-2 leading-relaxed mb-3 min-h-8">{v.title}</p>
-                      <div className="flex gap-1.5">
+                      <p className="text-xs text-[#ccc] line-clamp-2 leading-relaxed mb-1 min-h-8">{v.title}</p>
+                      {v.uploader && <p className="text-[10px] text-[#666] truncate mb-2">{v.uploader}</p>}
+                      <div className={`flex gap-1.5 ${v.uploader ? '' : 'mt-2'}`}>
                         <a href={directUrl(v.videoId, 'mp4', 'high', v.title)} onClick={onDirectClick}
                           className="flex-1 py-1.5 text-center text-[11px] text-[#aaa] bg-[#1e1e1e] border border-[#2a2a2a] rounded hover:text-white hover:border-green-500/40 transition-colors flex items-center justify-center gap-1">
                           <IconDownload className="w-3 h-3" /> MP4

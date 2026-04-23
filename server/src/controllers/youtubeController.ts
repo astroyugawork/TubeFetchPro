@@ -56,6 +56,45 @@ export const fetchMetadata = async (req: Request, res: Response) => {
   }
 };
 
+export const searchVideos = async (req: Request, res: Response) => {
+  try {
+    const rawQuery = (req.body?.query || '').toString().trim();
+    if (!rawQuery) return res.status(400).json({ error: 'query is required' });
+
+    const limit = Math.min(Math.max(parseInt(String(req.body?.limit)) || 20, 1), 50);
+
+    // Escape double quotes so they don't break the shell-interpolated command.
+    const safeQuery = rawQuery.replace(/"/g, '\\"');
+
+    // ytsearch<N>: prefix tells yt-dlp to search YouTube and return the top N results.
+    const cmd = `${YT_DLP} ${getYtDlpCommonArgs()} "ytsearch${limit}:${safeQuery}" --flat-playlist --print "%(id)s||%(title)s||%(duration)s||%(uploader,channel)s" --no-warnings --ignore-errors`;
+    console.log(`[SEARCH] ${cmd}`);
+    const { stdout } = await execPromise(cmd, { timeout: 60000, maxBuffer: 1024 * 1024 * 10 });
+
+    const videos = stdout.trim().split('\n')
+      .filter((l) => l.includes('||'))
+      .map((l) => {
+        const parts = l.split('||');
+        if (parts.length < 4) return null;
+        const [videoId, title, duration, uploader] = parts;
+        if (!videoId || videoId === 'NA') return null;
+        return {
+          videoId,
+          title,
+          duration: parseInt(duration) || 0,
+          thumbnail: `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
+          uploader: uploader && uploader !== 'NA' ? uploader : '',
+        };
+      })
+      .filter((v): v is NonNullable<typeof v> => v !== null);
+
+    res.json({ query: rawQuery, videos });
+  } catch (error: any) {
+    console.error(`[SEARCH ERROR] ${error.message}`);
+    res.status(500).json({ error: 'Search failed. Try a different query.' });
+  }
+};
+
 export const directDownload = async (req: Request, res: Response) => {
   const url = (req.query.url || '').toString();
   const type = (req.query.type || 'mp4').toString();
